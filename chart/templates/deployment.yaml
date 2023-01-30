@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cloudprober.fullname" . }}
+  labels:
+    {{- include "cloudprober.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "cloudprober.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "cloudprober.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "cloudprober.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/cloudprober"]
+          args: ["--config_file", "/cfg/cloudprober.cfg", "--cloud_metadata", "none", "--logtostderr", "--disable_cloud_logging"]
+          ports:
+            - name: http
+              containerPort: 9313
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 8080
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: cloudprober-config
+              mountPath: /cfg
+      volumes:
+        - name: cloudprober-config
+          configMap:
+            name: {{ include "cloudprober.fullname" . }}
+            items:
+              - key: config
+                path: cloudprober.cfg
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
